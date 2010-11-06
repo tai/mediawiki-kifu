@@ -18,13 +18,17 @@ ShogiBoard = function(id) {
     this.block = document.getElementById(id);
     this.board = [[],[],[],[],[],[],[],[],[]];
     this.reset();
+
+    // play control
+    this.play_run = false; // true if autoplay
 };
 
 ShogiBoard.prototype.init = function() {
-    this.rec  = []; // play record since initial load
-    this.pos  = 0;  // play record position
     this.pool = {s:{}, g:{}}; // piece(s) in each side's hand
     this.turn = 0;  // 0 == sen-te, 1 == go-te
+
+    // play control
+    this.play_pos = 0;     // play record position
 
     // init board
     for (var i = 0; i < 9; i++) {
@@ -60,10 +64,27 @@ ShogiBoard.prototype.load_csa = function(init_csa) {
     this.init_csa = init_csa;
     this.init_usi = null;
 
-    for (var i = 1; i < init_csa.length; i++) {
-	this.play(init_csa[i]);
+    // pick out board placement data
+    for (i in init_csa) {
+	var op = init_csa[i];
+
+	if (op.match(/^PI/)) {
+	    this.board[0] = "gnl,gnn,gns,gng,gnk,gng,gns,gnn,gnl".split(/,/);
+	    this.board[1] = ",gnr,,,,,,gnb,".split(/,/);
+	    this.board[2] = "gnp,gnp,gnp,gnp,gnp,gnp,gnp,gnp,gnp".split(/,/);
+	    this.board[3] = ",,,,,,,,,".split(/,/);
+	    this.board[4] = ",,,,,,,,,".split(/,/);
+	    this.board[5] = ",,,,,,,,,".split(/,/);
+	    this.board[6] = "snp,snp,snp,snp,snp,snp,snp,snp,snp".split(/,/);
+	    this.board[7] = ",snb,,,,,,snr,".split(/,/);
+	    this.board[8] = "snl,snn,sns,sng,snk,sng,sns,snn,snl".split(/,/);
+	}
+
+	// TODO: support other board initial placement commands
     }
-    return false;
+
+    this.show();
+    return true;
 }
 
 ShogiBoard.prototype.load_usi = function(init_usi) {
@@ -120,9 +141,7 @@ ShogiBoard.prototype.load_usi = function(init_usi) {
 	this.pool[side][piece.toLowerCase()] += count;
     }
 
-    for (var i = 1; i < init_usi.length; i++) {
-	this.play(init_usi[i]);
-    }
+    this.show();
     return true;
 };
 
@@ -145,6 +164,51 @@ ShogiBoard.csa2usi = function(move) {
 		ret[4] + "abcdefghi".charAt(parseInt(ret[5]) - 1) +
 		(ret[1] == '+' ? map[ret[6]].toUpperCase() : map[ret[6]]));
     }
+};
+
+ShogiBoard.prototype.playto = function(n) {
+    var game = this.init_csa ? this.init_csa : this.init_usi;
+    var i;
+
+    this.reload();
+    for (i = 0; i < game.length; i++) {
+	if (n >= 0 && this.play_pos >= n) break;
+	this.play(game[i]);
+    }
+    this.show();
+
+    return i < game.length;
+}
+
+ShogiBoard.prototype.play_stop = function() {
+    this.play_run = false;
+}
+
+ShogiBoard.prototype.play_next = function() {
+    return this.playto(this.play_pos + 1);
+}
+
+ShogiBoard.prototype.play_prev = function() {
+    return this.playto(this.play_pos - 1);
+}
+
+ShogiBoard.prototype.play_auto = function() {
+    if (this.play_run) {
+	this.play_run = false;
+    }
+    else {
+	this.play_run = true;
+	this.play_auto_real();
+    }
+}
+
+ShogiBoard.prototype.play_auto_real = function() {
+    var self = this;
+    setTimeout(function() {
+	if (self.play_run && self.play_next()) {
+	    self.play_auto_real();
+	}
+    }, 1000);
 }
 
 ShogiBoard.prototype.play = function(move) {
@@ -186,11 +250,14 @@ ShogiBoard.prototype.play_usi = function(move) {
 	}
 
 	if (move.match(/\+$/)) {
-	    src.replace(/^sn/, 'sp');
-	    src.replace(/^gn/, 'gp');
+	    src = src.replace(/^sn/, 'sp').replace(/^gn/, 'gp');
 	}
 	this.board[r1][c1] = src;
 	this.board[r0][c0] = '';
+
+	this.turn ^= 1;
+	this.play_pos++;
+	return true;
     }
 
     if (move.match(/^[A-Z]\*[1-9][a-i]/)) {
@@ -204,14 +271,14 @@ ShogiBoard.prototype.play_usi = function(move) {
 
 	this.board[r1][c1] = side + "n" + name;
 	this.pool[side][name]--;
+
+	this.turn ^= 1;
+	this.play_pos++;
+	return true;
     }
 
-    this.turn ^= 1;
-    this.rec.unshift(move);
-    this.pos++;
-
-    return true;
-};
+    return false;
+}
 
 ShogiBoard.prototype.show = function() {
     var html = '';
@@ -275,7 +342,15 @@ body {
 }
 
 .shogiboard tr {
-    height: 32px;
+    height: 34px;
+}
+
+.shogiboard div.blackpool {
+    height: 40px;
+}
+
+.shogiboard div.whitepool {
+    height: 40px;
 }
 
 .shogiboard td {
@@ -293,30 +368,41 @@ body {
 .shogiboard img {
     height: 32px;
 }
+
+.shogiboard span.control {
+    width: 30px;
+    background-color: #cccccc;
+    text-align: center;
+    padding: 0 1em 0 1em;
+}
+
+.shogiboard .control  a {
+    color: black;
+    text-decoration: none;
+}
 </style>
 </head>
 
 <body>
-<div id="shogiboard" class="shogiboard" />
+<div class="shogiboard">
+<div id="shogiboard"></div>
+<div>
+<span class="control"><a href="javascript:sb.playto(0);">&lt;&lt;</a></span>
+<span class="control"><a href="javascript:sb.play_prev();">&lt</a></span>
+<span class="control"><a href="javascript:sb.play_auto();">+</a></span>
+<span class="control"><a href="javascript:sb.play_next();">&gt;</a></span>
+<span class="control"><a href="javascript:sb.playto(-1);">&gt;&gt;</a></span>
+</div>
+</div>
 <script>
-(function() {
-    var qs = parseQueryString();
-    var pd = parent.document.getElementById(qs['id']);
-    var sb = new ShogiBoard("shogiboard");
+var args = parseQueryString();
+var data = parent.document.getElementById(args['id']);
+var kifu = data.innerText.split(/[\r\n]/);
+var sb   = new ShogiBoard("shogiboard");
 
-    var kifu = pd.innerText.split(/[\r\n]/);
-    for (var i in kifu) {
-	if (kifu[i].match(/^PI/)) {
-	    sb.load_usi(["startpos"]);
-	}
-	else if (kifu[i].match(/^[-+][0-9]/)) {
-    	    sb.play(kifu[i]);
-	}
-    }
-    sb.show();
-
-    alert(qs["initialmove"]);
-})();
+sb.load_csa(kifu);
+if (parseInt(args.im) >= 0) sb.playto(parseInt(args.im));
+if (parseInt(args.ap) == 1) sb.play_auto();
 </script>
 
 </body>
